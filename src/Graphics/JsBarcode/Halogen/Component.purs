@@ -11,9 +11,7 @@ import Data.Foreign (toForeign)
 import Data.Foreign.Class (read)
 import Data.Maybe (Maybe(..))
 import Graphics.JsBarcode (Config, Format(EAN13), mkJsBarcode, defaultConfig)
-import Prelude (type (~>), pure, unit, bind, const, ($), ($>), (<<<), (=<<))
-
-import Debug.Trace
+import Prelude (type (~>), pure, unit, bind, const, ($), ($>), (*>), (<<<), (=<<))
 
 type JsBarcodeEffects eff = (dom :: DOM | eff)
 
@@ -26,6 +24,7 @@ type State =
 data Query a
   = SetElement (Maybe HTMLCanvasElement) a
   | Init a
+  | SetCode String a
 
 initialState :: State
 initialState = 
@@ -51,12 +50,17 @@ component = H.lifecycleComponent
 
   eval :: Query ~> H.ComponentDSL State Query (Aff (JsBarcodeEffects eff))
   eval (SetElement elm next) = H.modify (_ { element = elm}) $> next
-  eval (Init next) = do
+  eval (Init next) = drawBarcode $> next
+  eval (SetCode value next) =
+    H.modify _ { value = value }
+    *> drawBarcode
+    $> next
+  
+  drawBarcode = do
     elm <- H.gets _.element
     config <- H.gets _.config
     value <- H.gets _.value
-    case spy elm of
+    case elm of
       Nothing -> pure unit
       Just el' -> do
-        H.fromEff $ mkJsBarcode el' (spy value) (spy config)
-    pure next
+        H.fromEff $ mkJsBarcode el' value config
