@@ -1,0 +1,27 @@
+{
+  "name": "purescript-js-barcode-halogen",
+  "license": "MIT",
+  "authors": [
+    "narinari <narinari.t@gmail.com>"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/narinari/purescript-js-barcode-halogen.git"
+  },
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "output",
+    "test",
+    "bower.json",
+    "package.json"
+  ],
+  "dependencies": {
+    "purescript-js-barcode": "^0.1.0",
+    "purescript-halogen": "^0.11.0"
+  },
+  "devDependencies": {
+    "purescript-psci-support": "^1.0.0"
+  }
+}
