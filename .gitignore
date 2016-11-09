@@ -7,3 +7,5 @@
 /output/
 /src/.webpack.js
 /example/example.js
+yarn.lock
+
