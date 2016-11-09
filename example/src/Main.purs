@@ -14,9 +14,7 @@ import Control.Monad.Eff (Eff)
 import Data.Functor.Coproduct (Coproduct)
 import Data.Maybe (Maybe(Nothing))
 import Halogen.Util (runHalogenAff, awaitBody)
-import Prelude (class Eq, class Ord, type (~>), Unit, bind, pure, (=<<), ($))
-
-import Debug.Trace
+import Prelude (class Eq, class Ord, type (~>), Unit, (=<<), ($), ($>))
 
 type MainEffects = H.HalogenEffects ()
 
@@ -74,9 +72,9 @@ ui = H.parentComponent { render, eval, peek: Nothing }
   slotB = JsBarcodeSlot "B"
 
   eval :: Query ~> MainDSL MainAff
-  eval (InputCode ref value next) = do
-    traceAny value \_ -> H.query ref $ H.action $ JsBarcode.SetCode value
-    pure next
+  eval (InputCode ref value next) =
+    H.query ref (H.action $ JsBarcode.SetCode value)
+    $> next
  
 main :: Eff MainEffects Unit
 main = runHalogenAff $ H.runUI ui (H.parentState initialState) =<< awaitBody
