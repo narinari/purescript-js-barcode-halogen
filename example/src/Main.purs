@@ -4,67 +4,62 @@ import Graphics.JsBarcode.Types
 import Graphics.JsBarcode.Halogen.Component as JsBarcode
 
 import Halogen as H
-import Halogen.HTML.Indexed as HH
-import Halogen.HTML.Properties.Indexed as HP
-import Halogen.HTML.Events.Indexed as HE
+import Halogen.Aff (HalogenEffects, runHalogenAff, awaitBody)
+import Halogen.HTML as HH
+import Halogen.HTML.Properties as HP
+import Halogen.HTML.Events as HE
 
 import CSS.Color (rgb)
 import Control.Monad.Aff (Aff)
 import Control.Monad.Eff (Eff)
-import Data.Functor.Coproduct (Coproduct)
-import Data.Maybe (Maybe(Nothing))
-import Halogen.Util (runHalogenAff, awaitBody)
-import Prelude (class Eq, class Ord, type (~>), Unit, (=<<), ($), ($>))
+import Data.Maybe (Maybe(..))
+import Data.Void (Void, absurd)
+import Halogen.VDom.Driver (runUI)
+import Prelude (class Eq, class Ord, type (~>), Unit, unit, const, (=<<), ($), ($>))
 
-type MainEffects = H.HalogenEffects ()
+type MainEffects = HalogenEffects ()
 
 data Query a
-  = InputCode JsBarcodeSlot String a
+  = InputCode String a
 
-type State =
-  { sig1Data :: Maybe String
-  }
+type State = Maybe String
 
 initialState :: State
-initialState =
-  { sig1Data: Nothing
-  }
+initialState = Nothing
 
 data JsBarcodeSlot = JsBarcodeSlot String
 
 derive instance jsBarcodeSlotOrd :: Ord JsBarcodeSlot
 derive instance jsBarcodeSlotEq :: Eq JsBarcodeSlot
 
-type StateP g = H.ParentState State JsBarcode.State Query JsBarcode.Query g JsBarcodeSlot
-type QueryP = Coproduct Query (H.ChildF JsBarcodeSlot JsBarcode.Query)
-type MainHTML g = H.ParentHTML JsBarcode.State Query JsBarcode.Query g JsBarcodeSlot
+type MainHTML g = H.ParentHTML Query JsBarcode.Query JsBarcodeSlot g
 type MainAff = Aff MainEffects
-type MainDSL g = H.ParentDSL State JsBarcode.State Query JsBarcode.Query g JsBarcodeSlot
+type MainDSL g = H.ParentDSL State Query JsBarcode.Query JsBarcodeSlot Void g
 
-ui :: H.Component (StateP MainAff) QueryP MainAff
-ui = H.parentComponent { render, eval, peek: Nothing }
+ui :: H.Component HH.HTML Query Unit Void MainAff
+ui = H.parentComponent { initialState: const initialState, render, eval, receiver: const Nothing }
   where
   barcodeConfig = defaultConfig { format = EAN13, background = rgb 220 220 220 }
   render :: State -> MainHTML MainAff
   render state =
     HH.div_
     [ HH.div_
-      [ HH.slot slotA
-          \_ -> { component: JsBarcode.component
-                , initialState: JsBarcode.initialState
-                    { config = barcodeConfig, value = "012345678912"}
-                }
+      [ HH.slot
+          slotA
+          (JsBarcode.component (Just barcodeConfig))
+          (Just "0071641011519")
+          absurd
       ]
     , HH.div_
-      [ HH.slot slotB
-          \_ -> { component: JsBarcode.component
-                , initialState: JsBarcode.initialState
-                    { config = barcodeConfig, value = ""}
-                }
+      [ HH.slot
+          slotB
+          (JsBarcode.component (Just defaultConfig { format = EAN13, background = rgb 100 100 220 }))
+          state
+          absurd
       ]
     , HH.input
-      [ HP.inputType HP.InputText
-      , HE.onValueInput $ HE.input $ InputCode slotB
+      [ HP.type_ HP.InputText
+      , HE.onValueInput $ HE.input $ InputCode
       ]
     ]
 
@@ -72,9 +67,9 @@ ui = H.parentComponent { render, eval, peek: Nothing }
   slotB = JsBarcodeSlot "B"
 
   eval :: Query ~> MainDSL MainAff
-  eval (InputCode ref value next) =
-    H.query ref (H.action $ JsBarcode.SetCode value)
+  eval (InputCode value next) =
+    H.put (Just value)
     $> next
- 
+
 main :: Eff MainEffects Unit
-main = runHalogenAff $ H.runUI ui (H.parentState initialState) =<< awaitBody
+main = runHalogenAff $ runUI ui unit =<< awaitBody

@@ -1,71 +1,82 @@
 module Graphics.JsBarcode.Halogen.Component where
 
 import Halogen as H
-import Halogen.HTML.Indexed as HH
-import Halogen.HTML.Properties.Indexed as HP
+import Halogen.HTML as HH
+import Halogen.HTML.Events as HE
+import Halogen.HTML.Properties as HP
 import Control.Monad.Aff.Class (class MonadAff)
-import Control.Monad.Aff.Free (class Affable)
 import Control.Monad.Except (runExcept)
+import Control.Monad.Eff.Exception (catchException)
 import DOM (DOM)
-import DOM.HTML.Types (HTMLCanvasElement)
+import DOM.Node.Types (Element, readElement)
 import Data.Either (either)
-import Data.Foreign (toForeign)
-import Data.Foreign.Class (read)
-import Data.Maybe (Maybe(..))
-import Graphics.JsBarcode (Config, Format(EAN13), mkJsBarcode, defaultConfig)
-import Prelude (type (~>), pure, unit, bind, const, ($), ($>), (*>), (<<<), (=<<))
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Traversable (traverse_)
+import Data.Void (Void)
+import Graphics.JsBarcode (Config, mkJsBarcode, defaultConfig) as JsBarcode
+import Prelude (type (~>), const, unit, pure, bind, when, ($), (<*>), (<$>), (/=), ($>), (>>>), (>>=))
 
 type JsBarcodeEffects eff = (dom :: DOM | eff)
 
 type State =
-  { element :: Maybe HTMLCanvasElement
+  { element :: Maybe Element
   , config :: Config
-  , value :: String
+  }
+
+type Config =
+  { barcodeConfig :: JsBarcode.Config
+  , value :: Maybe String
   }
 
 data Query a
-  = SetElement (Maybe HTMLCanvasElement) a
-  | Init a
-  | SetCode String a
+  = Init a
+  | HandleInput Input a
 
-initialState :: State
-initialState = 
+type Input = Maybe String
+
+initialState :: JsBarcode.Config -> Input -> State
+initialState barcodeConfig value =
   { element: Nothing
-  , config: defaultConfig { format = EAN13, displayValue = false }
-  , value: ""
+  , config:
+    { barcodeConfig
+    , value: value
+    }
   }
 
 component
   :: forall m eff
-  . ( MonadAff (JsBarcodeEffects eff) m
-    , Affable (JsBarcodeEffects eff) m
-    )
-  => H.Component State Query m
-component = H.lifecycleComponent
-  { render
+  . ( MonadAff (JsBarcodeEffects eff) m )
+  => Maybe JsBarcode.Config
+  -> H.Component HH.HTML Query Input Void m
+component config = H.lifecycleComponent
+  { initialState: initialState (fromMaybe JsBarcode.defaultConfig config)
+  , render
   , eval
+  , receiver: HE.input HandleInput
   , initializer: Just (H.action Init)
   , finalizer: Nothing
   }
+
   where
   render :: State -> H.ComponentHTML Query
   render _ =
     HH.canvas
-    [ HP.ref (\elm -> H.action $ SetElement $ (either (const Nothing ) pure <<< runExcept <<< read <<< toForeign) =<< elm) ]
+    [ HP.ref (H.RefLabel "barcode") ]
 
-  eval :: Query ~> H.ComponentDSL State Query m
-  eval (SetElement elm next) = H.modify (_ { element = elm}) $> next
-  eval (Init next) = drawBarcode $> next
-  eval (SetCode value next) =
-    H.modify _ { value = value }
-    *> drawBarcode
+  eval :: Query ~> H.ComponentDSL State Query Void m
+  eval (Init next) = do
+    elm <- H.getRef (H.RefLabel "barcode")
+    H.modify _ { element = elm >>= readElement >>> runExcept >>> either (const Nothing) Just  }
+    drawBarcode
+    pure next
+
+  eval (HandleInput new next) = do
+    old <- H.gets _.config.value
+    when (old /= new) do
+      H.modify \s -> s { config = s.config { value = new } }
+      drawBarcode
     $> next
-  
+
   drawBarcode = do
-    elm <- H.gets _.element
-    config <- H.gets _.config
-    value <- H.gets _.value
-    case elm of
-      Nothing -> pure unit
-      Just el' -> do
-        H.fromEff $ mkJsBarcode el' value config
+    { element, config } <- H.get
+    traverse_ H.liftEff $ (\e v -> catchException (const $ pure unit) $ JsBarcode.mkJsBarcode e v config.barcodeConfig) <$> element <*> config.value
